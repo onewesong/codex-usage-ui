@@ -11,7 +11,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 
 def codex_home() -> Path:
@@ -19,19 +19,30 @@ def codex_home() -> Path:
     return Path(env_path) if env_path else Path.home() / ".codex"
 
 
+def auth_path(home: Path) -> Path:
+    override = os.environ.get("CODEX_AUTH_PATH")
+    if override:
+        return Path(override).expanduser()
+    return home / "auth.json"
+
+
 def load_auth(home: Path) -> tuple[str, str]:
-    auth_path = home / "auth.json"
-    if not auth_path.exists():
+    current_auth_path = auth_path(home)
+    if not current_auth_path.exists():
         raise FileNotFoundError(
-            f"{auth_path} does not exist; run `codex login chatgpt` before using this script."
+            f"{current_auth_path} does not exist; run `codex login chatgpt` "
+            "or set `CODEX_AUTH_PATH` to a valid auth.json path."
         )
-    data = json.loads(auth_path.read_text(encoding="utf-8"))
+    data = json.loads(current_auth_path.read_text(encoding="utf-8"))
     tokens = data.get("tokens")
     if not tokens:
-        raise ValueError("no ChatGPT tokens found in auth.json (run `codex login chatgpt`).")
+        raise ValueError(
+            f"no ChatGPT tokens found in {current_auth_path} "
+            "(run `codex login chatgpt` or check `CODEX_AUTH_PATH`)."
+        )
     access_token = tokens.get("access_token")
     if not access_token:
-        raise ValueError("missing `access_token` in auth.json")
+        raise ValueError(f"missing `access_token` in {current_auth_path}")
     account_id = tokens.get("account_id") or ""
     return access_token, account_id
 
@@ -110,75 +121,118 @@ def fetch_usage_snapshot(home: Optional[Path] = None) -> Tuple[str, str, Dict[st
     return usage_url, body, data
 
 
-def format_rate_limit_window(name: str, window: Dict[str, Any]) -> str:
-    if not window:
-        return f"{name}：无详细信息"
-    used = window.get("used_percent")
-    limit_seconds = window.get("limit_window_seconds")
-    resets_at = window.get("reset_at")
-    details = []
-    if isinstance(used, (int, float)):
-        details.append(f"已用 {used:.0f}%")
-    if isinstance(limit_seconds, (int, float)):
-        seconds = int(limit_seconds)
-        minutes = seconds // 60
-        if minutes:
-            hours = seconds / 3600
-            if hours.is_integer():
-                hours_label = f"{int(hours)} 小时"
-            else:
-                hours_label = f"{hours:.1f} 小时"
-            details.append(f"{minutes} 分钟窗口 ({hours_label})")
-        else:
-            details.append(f"{seconds} 秒窗口")
-    if resets_at:
-        resets = datetime.fromtimestamp(resets_at, tz=timezone.utc).astimezone()
-        details.append(f"将在 {resets.strftime('%Y-%m-%d %H:%M:%S')} 重置")
-    detail_str = "，".join(details) if details else "无详细信息"
-    return f"{name}：{detail_str}"
-
-
-def describe_rate_limit(label: str, payload: Dict[str, Any]) -> None:
+def format_status(payload: Dict[str, Any]) -> str:
     allowed = payload.get("allowed")
     limit_reached = payload.get("limit_reached")
-    status_parts = []
-    if allowed is not None:
-        status_parts.append("✅ 已允许" if allowed else "❌ 未允许")
-    if limit_reached is not None:
-        status_parts.append("🚨 已达上限" if limit_reached else "⚡ 未达上限")
-    status = "，".join(status_parts) if status_parts else "状态未知"
-    print(f"{label}：{status}")
-    primary = payload.get("primary_window")
-    secondary = payload.get("secondary_window")
-    if primary:
-        print("  " + format_rate_limit_window("主窗口", primary))
-    if secondary:
-        print("  " + format_rate_limit_window("辅助窗口", secondary))
+    if allowed is False:
+        return "不可用"
+    if limit_reached:
+        return "已达上限"
+    if allowed:
+        return "可用"
+    return "未知"
+
+
+def emit_kv_rows(rows: Iterable[Tuple[str, str]]) -> None:
+    normalized = [(label, value) for label, value in rows if value]
+    if not normalized:
+        return
+    width = max(len(label) for label, _ in normalized)
+    for label, value in normalized:
+        print(f"  {label:<{width}}  {value}")
+
+
+def emit_window_block(title: str, window: Dict[str, Any]) -> None:
+    if not isinstance(window, dict) or not window:
+        return
+    used_percent = int(window.get("used_percent", 0))
+    print(f"- {title}（{format_window_span(window.get('limit_window_seconds'))}）")
+    emit_kv_rows(
+        [
+            ("已使用", f"{used_percent}%"),
+            ("进度条", progress_bar_text(used_percent)),
+            ("重置剩余", format_remaining(window.get("reset_after_seconds"))),
+            ("重置时间", format_reset_at(window.get("reset_at"))),
+        ]
+    )
+
+
+def emit_section(title: str) -> None:
+    print()
+    print(f"[{title}]")
 
 
 def human_summary(data: Dict[str, Any]) -> None:
     plan = data.get("plan_type") or "未知"
-    print(f"📦 订阅计划：{plan}")
+    print(f"订阅计划: {plan}")
+
     rate_limit = data.get("rate_limit")
     if isinstance(rate_limit, dict):
-        describe_rate_limit("⚡ 离线请求限额", rate_limit)
+        emit_section("配额使用详情")
+        emit_window_block("主窗口", rate_limit.get("primary_window"))
+        emit_window_block("周窗口", rate_limit.get("secondary_window"))
+
     code_review_limit = data.get("code_review_rate_limit")
     if isinstance(code_review_limit, dict):
-        describe_rate_limit("🛠️ 代码评审限额", code_review_limit)
+        emit_section("Code Review 配额")
+        primary = code_review_limit.get("primary_window") or {}
+        emit_kv_rows(
+            [
+                ("状态", format_status(code_review_limit)),
+                ("周配额已用", f"{int(primary.get('used_percent', 0))}%"),
+                ("进度条", progress_bar_text(int(primary.get("used_percent", 0)))),
+                ("重置周期", format_window_span(primary.get("limit_window_seconds"))),
+                ("重置剩余", format_remaining(primary.get("reset_after_seconds"))),
+                ("重置时间", format_reset_at(primary.get("reset_at"))),
+            ]
+        )
+
+    additional_limits = data.get("additional_rate_limits")
+    if isinstance(additional_limits, list):
+        for item in additional_limits:
+            if not isinstance(item, dict):
+                continue
+            limit_name = item.get("limit_name") or "附加"
+            limit = item.get("rate_limit") if isinstance(item.get("rate_limit"), dict) else {}
+            primary = limit.get("primary_window") if isinstance(limit.get("primary_window"), dict) else {}
+            secondary = (
+                limit.get("secondary_window") if isinstance(limit.get("secondary_window"), dict) else {}
+            )
+            emit_section(f"{limit_name} 额外配额")
+            emit_kv_rows(
+                [
+                    ("功能代号", str(item.get("metered_feature") or "-")),
+                    ("状态", format_status(limit)),
+                    (
+                        f"主窗口已用（{format_window_span(primary.get('limit_window_seconds'))}）",
+                        f"{int(primary.get('used_percent', 0))}%",
+                    ),
+                    (
+                        "主窗口进度",
+                        progress_bar_text(int(primary.get("used_percent", 0))),
+                    ),
+                    (
+                        f"周窗口已用（{format_window_span(secondary.get('limit_window_seconds'))}）",
+                        f"{int(secondary.get('used_percent', 0))}%",
+                    ),
+                    (
+                        "周窗口进度",
+                        progress_bar_text(int(secondary.get("used_percent", 0))),
+                    ),
+                ]
+            )
+
     credits = data.get("credits")
     if isinstance(credits, dict):
-        has_credits = credits.get("has_credits")
-        unlimited = credits.get("unlimited")
-        balance = credits.get("balance")
-        parts = []
-        if has_credits is not None:
-            parts.append("✅ 有额度" if has_credits else "❌ 无额度")
-        if unlimited is not None:
-            parts.append("♾️ 无限" if unlimited else "🔒 有上限")
-        if balance:
-            parts.append(f"余额 {balance}")
-        status = "，".join(parts) if parts else "状态未知"
-        print(f"💰 额度状态：{status}")
+        emit_section("积分余额")
+        emit_kv_rows(
+            [
+                ("余额", str(credits.get("balance", "0"))),
+                ("无限积分", "是" if credits.get("unlimited") else "否"),
+                ("本地消息估算", pair_text(credits.get("approx_local_messages"))),
+                ("云端消息估算", pair_text(credits.get("approx_cloud_messages"))),
+            ]
+        )
 
 
 def format_window_span(seconds: Any) -> str:
@@ -218,7 +272,7 @@ def format_remaining(seconds: Any) -> str:
         parts.append(f"{hours}小时")
     if minutes or not parts:
         parts.append(f"{minutes}分钟")
-    return f"约{' '.join(parts)}后重置"
+    return f"约{''.join(parts)}后重置"
 
 
 def format_reset_at(timestamp: Any) -> str:
@@ -226,3 +280,16 @@ def format_reset_at(timestamp: Any) -> str:
         return "未知"
     reset_time = datetime.fromtimestamp(timestamp, tz=timezone.utc).astimezone()
     return reset_time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def pair_text(value: Any) -> str:
+    if isinstance(value, (list, tuple)) and len(value) == 2:
+        return f"{value[0]} / {value[1]}"
+    return "未知"
+
+
+def progress_bar_text(percent: int, width: int = 20) -> str:
+    bounded = max(0, min(percent, 100))
+    filled = round(bounded / 100 * width)
+    empty = width - filled
+    return f"{'█' * filled}{'░' * empty} {bounded}%"

@@ -2,7 +2,7 @@
 
 一个基于 Streamlit 的 Codex 配额看板。
 
-它会读取本机 `~/.codex/auth.json` 中缓存的 ChatGPT 登录信息，请求 Codex 使用量接口，并展示：
+它会读取本机 Codex/ChatGPT 登录态，请求 Codex 使用量接口，并展示：
 
 - 主窗口配额
 - 周窗口配额
@@ -10,7 +10,7 @@
 - Additional rate limits
 - Credits / 积分余额
 
-界面默认是深色卡片样式，适合本地直接打开查看当前限额。
+界面默认是深色卡片样式，适合本地直接打开查看当前限额；同时保留 CLI 模式，方便在终端里快速查看。
 
 ## 功能
 
@@ -18,7 +18,15 @@
 - 自动创建本地虚拟环境并安装依赖
 - 复用本机 `codex login chatgpt` 的登录态
 - 支持按钮手动刷新
+- 支持 `CODEX_AUTH_PATH` 覆盖默认 `auth.json`
 - 保留 CLI 方式输出 JSON 或人类可读摘要
+- CLI 摘要支持文本进度条，例如 `█████░░░░░░░░░░░░░`
+
+## 仓库地址
+
+```text
+https://github.com/onewesong/codex-usage-ui
+```
 
 ## 目录结构
 
@@ -42,12 +50,31 @@ codex-usage-ui/
 codex login chatgpt
 ```
 
-如果本机没有 `~/.codex/auth.json`，应用无法拉取配额数据。
+如果本机没有可用的登录态文件，应用无法拉取配额数据。
+
+## 环境变量
+
+`codex-usage-ui` 当前支持这些环境变量：
+
+- `CODEX_AUTH_PATH`
+  用于覆盖默认的 `~/.codex/auth.json`
+- `CODEX_HOME`
+  用于覆盖默认的 `~/.codex` 目录，程序会继续从这个目录查找 `config.toml`
+- `PORT`
+  用于覆盖 Streamlit 默认端口 `8501`
+
+示例：
+
+```bash
+export CODEX_AUTH_PATH=/path/to/auth.json
+export CODEX_HOME=/path/to/.codex
+export PORT=8511
+```
 
 ## 快速开始
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/onewesong/codex-usage-ui.git
 cd codex-usage-ui
 ./run.sh
 ```
@@ -70,6 +97,18 @@ http://127.0.0.1:8501
 PORT=8511 ./run.sh
 ```
 
+如果你要使用自定义 `auth.json`：
+
+```bash
+CODEX_AUTH_PATH=/path/to/auth.json ./run.sh
+```
+
+如果你还要覆盖 Codex 配置目录：
+
+```bash
+CODEX_HOME=/path/to/.codex ./run.sh
+```
+
 ## CLI 用法
 
 输出人类可读摘要：
@@ -90,12 +129,37 @@ PORT=8511 ./run.sh
 python3 get-codex-usage.py --json-only
 ```
 
+使用自定义鉴权文件：
+
+```bash
+CODEX_AUTH_PATH=/path/to/auth.json python3 get-codex-usage.py --human
+```
+
+示例输出：
+
+```text
+GET https://chatgpt.com/backend-api/wham/usage
+订阅计划: pro
+
+[配额使用详情]
+- 主窗口（5小时）
+  已使用   25%
+  进度条   █████░░░░░░░░░░░░░░░ 25%
+  重置剩余  约3小时后重置
+  重置时间  2026-03-19 00:16:06
+- 周窗口（7天）
+  已使用   59%
+  进度条   ████████████░░░░░░░░ 59%
+  重置剩余  约7小时后重置
+  重置时间  2026-03-19 04:05:12
+```
+
 ## 工作原理
 
 应用会：
 
-1. 读取 `~/.codex/auth.json`
-2. 从 `~/.codex/config.toml` 解析 `chatgpt_base_url`（如果存在）
+1. 优先读取 `CODEX_AUTH_PATH` 指向的文件，否则读取 `~/.codex/auth.json`
+2. 从 `CODEX_HOME/config.toml` 或 `~/.codex/config.toml` 解析 `chatgpt_base_url`（如果存在）
 3. 请求：
    - `https://chatgpt.com/backend-api/wham/usage`
    - 或兼容的 `/api/codex/usage`
@@ -110,6 +174,8 @@ python3 get-codex-usage.py --json-only
 ## 注意事项
 
 - 本项目不会帮你登录，必须先执行 `codex login chatgpt`
+- 如果你不想使用默认的 `~/.codex/auth.json`，可以设置 `CODEX_AUTH_PATH`
+- 如果你需要切换整套 Codex 配置目录，可以设置 `CODEX_HOME`
 - 该工具依赖本机已有登录态，不适合部署到无登录信息的纯服务器
 - 页面中的数据来自 ChatGPT/Codex 后端接口，字段结构未来可能变化
 - `.venv/`、`__pycache__/` 等本地文件已在 `.gitignore` 中忽略
