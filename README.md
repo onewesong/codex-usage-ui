@@ -1,4 +1,5 @@
 # codex-usage-ui
+<img width="2098" height="1684" alt="image" src="https://github.com/user-attachments/assets/bc20cd26-4e8c-467a-bd11-eb7b32c0f088" />
 
 一个基于 Streamlit 的 Codex 配额看板。
 
