@@ -144,6 +144,42 @@ def inject_css() -> None:
             fill: currentColor;
           }
 
+          .refresh-meta {
+            margin-top: 0.55rem;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 0.45rem;
+          }
+
+          .refresh-text {
+            color: var(--muted);
+          }
+
+          .stButton > button[kind="tertiary"] {
+            min-width: 2rem;
+            width: 2rem;
+            height: 2rem;
+            padding: 0;
+            border-radius: 999px;
+            border: 1px solid transparent !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            color: var(--muted) !important;
+          }
+
+          .stButton > button[kind="tertiary"]:hover {
+            border-color: rgba(255, 255, 255, 0.16) !important;
+            background: rgba(255, 255, 255, 0.04) !important;
+            color: var(--text) !important;
+          }
+
+          .stButton > button[kind="tertiary"]:focus,
+          .stButton > button[kind="tertiary"]:active {
+            background: rgba(255, 255, 255, 0.06) !important;
+            box-shadow: none !important;
+          }
+
           .card {
             background: rgba(50, 49, 45, 0.96);
             border: 1px solid var(--panel-border);
@@ -600,45 +636,68 @@ def render_page(data: Dict[str, Any], usage_url: str, raw_body: str) -> None:
     email = str(data.get("email") or "-")
     refreshed_at = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
     github_url = "https://github.com/onewesong/codex-usage-ui"
+    left_col, right_col = st.columns([1.4, 1])
+    with left_col:
+        st.markdown(
+            html_block(
+                """
+                <div>
+                  <div class="eyebrow">Codex Usage</div>
+                  <div class="page-title">配额看板</div>
+                </div>
+                """
+            ),
+            unsafe_allow_html=True,
+        )
 
-    st.markdown(
-        html_block(
-            f"""
-        <div class="topbar">
-          <div>
-            <div class="eyebrow">Codex Usage</div>
-            <div class="page-title">配额看板</div>
-          </div>
-            <div class="toolbar-meta">
-              <div class="toolbar-links">
-                <a
-                  class="github-link"
-                  href="{escape(github_url)}"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Open GitHub repository"
-                  title="Open GitHub repository"
-                >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38
-                    0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13
-                    -.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07
-                    -1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12
-                    0 0 .67-.21 2.2.82a7.5 7.5 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12
-                    .51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48
-                    0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"></path>
-                  </svg>
-                </a>
-                <span class="pill">Plan: {escape(plan)}</span>
-                <span class="pill">{escape(email)}</span>
-              </div>
-            <div style="margin-top:0.55rem;">最后刷新 {escape(refreshed_at)}</div>
-          </div>
-        </div>
-        """
-        ),
-        unsafe_allow_html=True,
-    )
+    with right_col:
+        st.markdown(
+            html_block(
+                f"""
+                <div class="toolbar-meta">
+                  <div class="toolbar-links">
+                    <a
+                      class="github-link"
+                      href="{escape(github_url)}"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="Open GitHub repository"
+                      title="Open GitHub repository"
+                    >
+                      <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38
+                        0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13
+                        -.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07
+                        -1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12
+                        0 0 .67-.21 2.2.82a7.5 7.5 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12
+                        .51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48
+                        0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"></path>
+                      </svg>
+                    </a>
+                    <span class="pill">Plan: {escape(plan)}</span>
+                    <span class="pill">{escape(email)}</span>
+                  </div>
+                </div>
+                """
+            ),
+            unsafe_allow_html=True,
+        )
+        refresh_text_col, refresh_button_col = st.columns([12, 1], gap="small")
+        with refresh_text_col:
+            st.markdown(
+                html_block(
+                    f"""
+                    <div class="refresh-meta">
+                      <span class="refresh-text">最后刷新 {escape(refreshed_at)}</span>
+                    </div>
+                    """
+                ),
+                unsafe_allow_html=True,
+            )
+        with refresh_button_col:
+            if st.button("↻", key="refresh_top", help="刷新数据", type="tertiary"):
+                load_usage.clear()
+                st.rerun()
 
     overview_tab, history_tab, raw_tab = st.tabs(
         ["实时总览", "历史趋势", "原始 JSON"]
