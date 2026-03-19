@@ -20,8 +20,10 @@
 - 复用本机 `codex login chatgpt` 的登录态
 - 支持按钮手动刷新
 - 支持 `CODEX_AUTH_PATH` 覆盖默认 `auth.json`
+- 支持 `CODEX_USAGE_DB_PATH` 覆盖历史数据库路径
 - 保留 CLI 方式输出 JSON 或人类可读摘要
 - CLI 摘要支持文本进度条，例如 `█████░░░░░░░░░░░░░`
+- UI 支持历史趋势曲线，展示配额使用百分比随时间的变化
 
 ## 仓库地址
 
@@ -63,6 +65,8 @@ codex login chatgpt
   用于覆盖默认的 `~/.codex` 目录，程序会继续从这个目录查找 `config.toml`
 - `PORT`
   用于覆盖 Streamlit 默认端口 `8501`
+- `CODEX_USAGE_DB_PATH`
+  用于覆盖历史趋势数据的 sqlite 路径，默认是 `~/.codex-usage-ui/history.sqlite3`
 
 示例：
 
@@ -70,6 +74,7 @@ codex login chatgpt
 export CODEX_AUTH_PATH=/path/to/auth.json
 export CODEX_HOME=/path/to/.codex
 export PORT=8511
+export CODEX_USAGE_DB_PATH=/path/to/history.sqlite3
 ```
 
 ## 快速开始
@@ -110,6 +115,12 @@ CODEX_AUTH_PATH=/path/to/auth.json ./run.sh
 CODEX_HOME=/path/to/.codex ./run.sh
 ```
 
+如果你要把历史趋势数据库写到其他位置：
+
+```bash
+CODEX_USAGE_DB_PATH=/path/to/history.sqlite3 ./run.sh
+```
+
 ## CLI 用法
 
 输出人类可读摘要：
@@ -135,6 +146,8 @@ python3 get-codex-usage.py --json-only
 ```bash
 CODEX_AUTH_PATH=/path/to/auth.json python3 get-codex-usage.py --human
 ```
+
+注意：CLI 不会写入历史趋势数据库，历史曲线只会在 UI 页面成功拉取数据时逐步积累。
 
 示例输出：
 
@@ -164,21 +177,46 @@ GET https://chatgpt.com/backend-api/wham/usage
 3. 请求：
    - `https://chatgpt.com/backend-api/wham/usage`
    - 或兼容的 `/api/codex/usage`
-4. 将返回结果渲染成 Streamlit 看板
+4. 在 UI 中把当前快照写入本地 sqlite 历史库
+5. 将当前快照和历史数据一起渲染成 Streamlit 看板
 
 核心逻辑在：
 
 - `codex_usage.py`：鉴权、请求、时间格式化
+- `history_store.py`：历史样本写入、sqlite 存储、历史查询
 - `codex_usage_app.py`：Streamlit UI
 - `get-codex-usage.py`：CLI 入口
+
+## 历史趋势
+
+历史趋势不是服务端回溯接口，而是本地采样积累出来的。
+
+- UI 每次成功拉取配额快照时，会把当前百分比写入本地 sqlite
+- 默认数据库路径：`~/.codex-usage-ui/history.sqlite3`
+- 可以通过 `CODEX_USAGE_DB_PATH` 覆盖默认路径
+- 首次打开页面时通常没有足够样本，曲线会在后续打开页面或点击“刷新数据”后逐步形成
+- v1 默认展示核心额度曲线：
+  - 主窗口
+  - 周窗口
+  - Code Review
+- 额外配额趋势放在折叠区域中查看
+
+时间范围支持：
+
+- `24H`
+- `7D`
+- `30D`
+- `全部`
 
 ## 注意事项
 
 - 本项目不会帮你登录，必须先执行 `codex login chatgpt`
 - 如果你不想使用默认的 `~/.codex/auth.json`，可以设置 `CODEX_AUTH_PATH`
 - 如果你需要切换整套 Codex 配置目录，可以设置 `CODEX_HOME`
+- 如果你需要自定义历史趋势数据库位置，可以设置 `CODEX_USAGE_DB_PATH`
 - 该工具依赖本机已有登录态，不适合部署到无登录信息的纯服务器
 - 页面中的数据来自 ChatGPT/Codex 后端接口，字段结构未来可能变化
+- 历史趋势依赖本地持续采样；如果从未打开 UI，就不会有历史曲线
 - `.venv/`、`__pycache__/` 等本地文件已在 `.gitignore` 中忽略
 
 ## 发布到 GitHub

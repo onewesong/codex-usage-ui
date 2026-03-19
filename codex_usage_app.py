@@ -6,6 +6,8 @@ from html import escape
 from textwrap import dedent
 from typing import Any, Dict, Iterable, Tuple
 
+import altair as alt
+import pandas as pd
 import streamlit as st
 
 from codex_usage import (
@@ -14,9 +16,11 @@ from codex_usage import (
     format_reset_at,
     format_window_span,
 )
+from history_store import history_db_path, insert_history_snapshot, load_history_samples
 
 
 st.set_page_config(page_title="Codex 配额看板", layout="wide")
+HISTORY_RANGE_OPTIONS = ["24H", "7D", "30D", "全部"]
 
 
 def html_block(content: str) -> str:
@@ -209,12 +213,39 @@ def inject_css() -> None:
             font-size: 0.92rem;
           }
 
+          .history-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            margin: 0.35rem 0 0.85rem;
+          }
+
+          .history-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin: 0;
+          }
+
+          .history-subtitle {
+            color: var(--muted);
+            font-size: 0.92rem;
+            margin-top: 0.25rem;
+          }
+
           .stButton > button {
             border-radius: 999px;
             border: 1px solid rgba(255, 255, 255, 0.18);
             background: rgba(255, 255, 255, 0.04);
             color: var(--text);
             padding: 0.55rem 1rem;
+          }
+
+          div[data-testid="stRadio"] > div {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.10);
+            border-radius: 999px;
+            padding: 0.2rem 0.45rem;
           }
         </style>
         """,
@@ -224,7 +255,9 @@ def inject_css() -> None:
 
 @st.cache_data(ttl=30, show_spinner=False)
 def load_usage() -> Tuple[str, str, Dict[str, Any]]:
-    return fetch_usage_snapshot()
+    usage_url, raw_body, data = fetch_usage_snapshot()
+    insert_history_snapshot(data)
+    return usage_url, raw_body, data
 
 
 def clamp_percent(value: Any) -> float:
@@ -303,6 +336,108 @@ def pair_text(value: Any) -> str:
     if isinstance(value, (list, tuple)) and len(value) == 2:
         return f"{value[0]} / {value[1]}"
     return "未知"
+
+
+def history_chart(frame: pd.DataFrame, color_map: Dict[str, str]) -> alt.Chart:
+    color_domain = [key for key in color_map if key in set(frame["series_label"].tolist())]
+    color_range = [color_map[key] for key in color_domain]
+    base = alt.Chart(frame).encode(
+        x=alt.X("sampled_at:T", title="时间"),
+        y=alt.Y("used_percent:Q", title="已用 %", scale=alt.Scale(domain=[0, 100])),
+        color=alt.Color(
+            "series_label:N",
+            title="序列",
+            scale=alt.Scale(domain=color_domain, range=color_range),
+        ),
+        tooltip=[
+            alt.Tooltip("sampled_at:T", title="采样时间"),
+            alt.Tooltip("series_label:N", title="序列"),
+            alt.Tooltip("used_percent:Q", title="已用 %", format=".0f"),
+        ],
+    )
+    line = base.mark_line(strokeWidth=3)
+    points = base.mark_circle(size=60, opacity=1)
+    return (line + points).properties(height=260)
+
+
+def render_history_block(
+    title: str,
+    frame: pd.DataFrame,
+    color_map: Dict[str, str],
+    empty_message: str,
+) -> None:
+    st.subheader(title)
+    if frame.empty or frame["sampled_at"].nunique() < 2:
+        st.info(empty_message)
+        return
+
+    sample_count = int(frame["sampled_at"].nunique())
+    latest = frame["sampled_at"].max()
+    st.caption(
+        f"最近采样 {latest.strftime('%Y-%m-%d %H:%M:%S')} · {sample_count} 次采样 · {len(frame)} 条样本"
+    )
+    st.altair_chart(history_chart(frame, color_map), use_container_width=True)
+
+
+def render_history_section() -> None:
+    st.markdown(
+        html_block(
+            """
+            <div class="history-toolbar">
+              <div>
+                <div class="history-title">历史趋势</div>
+                <div class="history-subtitle">历史数据来自本地采样；首次打开不会立刻形成曲线。</div>
+              </div>
+            </div>
+            """
+        ),
+        unsafe_allow_html=True,
+    )
+    range_key = st.radio(
+        "历史时间范围",
+        options=HISTORY_RANGE_OPTIONS,
+        horizontal=True,
+        index=1,
+        label_visibility="collapsed",
+        key="history_range",
+    )
+    history_frame = load_history_samples(range_key)
+
+    core_frame = history_frame[history_frame["metric_group"] == "rate_limit"].copy()
+    render_history_block(
+        "配额使用趋势",
+        core_frame,
+        {"主窗口": "#79a8df", "周窗口": "#f5a623"},
+        "历史样本不足，打开页面或刷新后会逐步积累。",
+    )
+
+    review_frame = history_frame[history_frame["metric_group"] == "code_review_rate_limit"].copy()
+    render_history_block(
+        "Code Review 趋势",
+        review_frame,
+        {"Code Review": "#7cc045"},
+        "历史样本不足，打开页面或刷新后会逐步积累。",
+    )
+
+    with st.expander("额外配额趋势", expanded=False):
+        additional_frame = history_frame[history_frame["metric_group"] == "additional_rate_limit"].copy()
+        if additional_frame.empty:
+            st.info("暂无额外配额历史样本。")
+        else:
+            for (limit_name, metered_feature), group in additional_frame.groupby(
+                ["limit_name", "metered_feature"], sort=True
+            ):
+                label = str(limit_name or "附加配额")
+                if metered_feature:
+                    label = f"{label} · {metered_feature}"
+                render_history_block(
+                    label,
+                    group.copy(),
+                    {"主窗口": "#79a8df", "周窗口": "#7cc045"},
+                    "历史样本不足，打开页面或刷新后会逐步积累。",
+                )
+
+    st.caption(f"历史数据库: `{history_db_path()}`")
 
 
 def render_usage_detail(rate_limit: Dict[str, Any]) -> None:
@@ -397,16 +532,30 @@ def render_page(data: Dict[str, Any], usage_url: str, raw_body: str) -> None:
         unsafe_allow_html=True,
     )
 
-    render_usage_detail(data.get("rate_limit") if isinstance(data.get("rate_limit"), dict) else {})
-    render_code_review(
-        data.get("code_review_rate_limit")
-        if isinstance(data.get("code_review_rate_limit"), dict)
-        else {}
+    overview_tab, history_tab, additional_tab, raw_tab = st.tabs(
+        ["实时总览", "历史趋势", "额外配额", "原始 JSON"]
     )
-    render_additional_limits(data.get("additional_rate_limits"))
-    render_credits(data.get("credits") if isinstance(data.get("credits"), dict) else {})
 
-    with st.expander("查看原始 JSON"):
+    with overview_tab:
+        render_usage_detail(data.get("rate_limit") if isinstance(data.get("rate_limit"), dict) else {})
+        render_code_review(
+            data.get("code_review_rate_limit")
+            if isinstance(data.get("code_review_rate_limit"), dict)
+            else {}
+        )
+        render_credits(data.get("credits") if isinstance(data.get("credits"), dict) else {})
+
+    with history_tab:
+        render_history_section()
+
+    with additional_tab:
+        additional_items = data.get("additional_rate_limits")
+        if isinstance(additional_items, list) and additional_items:
+            render_additional_limits(additional_items)
+        else:
+            st.info("当前没有额外配额数据。")
+
+    with raw_tab:
         st.caption(f"来源: `{usage_url}`")
         st.code(raw_body, language="json")
 
@@ -417,6 +566,7 @@ def main() -> None:
     with refresh_col:
         if st.button("刷新数据", use_container_width=True):
             load_usage.clear()
+            st.cache_data.clear()
             st.rerun()
 
     try:
