@@ -16,7 +16,12 @@ from codex_usage import (
     format_reset_at,
     format_window_span,
 )
-from history_store import history_db_path, insert_history_snapshot, load_history_samples
+from history_store import (
+    history_db_path,
+    load_history_samples,
+    load_history_status,
+    save_history_snapshot_if_changed,
+)
 
 
 st.set_page_config(page_title="Codex 配额看板", layout="wide")
@@ -256,7 +261,7 @@ def inject_css() -> None:
 @st.cache_data(ttl=30, show_spinner=False)
 def load_usage() -> Tuple[str, str, Dict[str, Any]]:
     usage_url, raw_body, data = fetch_usage_snapshot()
-    insert_history_snapshot(data)
+    save_history_snapshot_if_changed(data, source="ui")
     return usage_url, raw_body, data
 
 
@@ -338,6 +343,22 @@ def pair_text(value: Any) -> str:
     return "未知"
 
 
+def format_history_status_timestamp(unix_ts: Any) -> str:
+    if not isinstance(unix_ts, (int, float)):
+        return "尚无"
+    return datetime.fromtimestamp(unix_ts).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def format_history_result(result: str) -> str:
+    mapping = {
+        "saved": "有变化已保存",
+        "unchanged": "无变化未保存",
+        "error": "采样失败",
+        "no_data": "无可保存数据",
+    }
+    return mapping.get(result, "尚未采样")
+
+
 def history_chart(frame: pd.DataFrame, color_map: Dict[str, str]) -> alt.Chart:
     color_domain = [key for key in color_map if key in set(frame["series_label"].tolist())]
     color_range = [color_map[key] for key in color_domain]
@@ -393,6 +414,38 @@ def render_history_section() -> None:
         ),
         unsafe_allow_html=True,
     )
+    status = load_history_status()
+    status_rows = [
+        (
+            "最近检查",
+            format_history_status_timestamp(status.get("last_checked_at")),
+            "",
+        ),
+        (
+            "最近保存",
+            format_history_status_timestamp(status.get("last_saved_at")),
+            "",
+        ),
+        (
+            "最近结果",
+            escape(format_history_result(str(status.get("last_result") or ""))),
+            "",
+        ),
+        (
+            "最近插入条数",
+            str(status.get("last_inserted_count", 0)),
+            "",
+        ),
+        (
+            "历史数据库",
+            escape(str(history_db_path())),
+            "",
+        ),
+    ]
+    if status.get("last_error"):
+        status_rows.append(("最近错误", escape(str(status["last_error"])), "status-warn"))
+    render_card("采集状态", metric_rows(status_rows))
+
     range_key = st.radio(
         "历史时间范围",
         options=HISTORY_RANGE_OPTIONS,
@@ -436,8 +489,6 @@ def render_history_section() -> None:
                     {"主窗口": "#79a8df", "周窗口": "#7cc045"},
                     "历史样本不足，打开页面或刷新后会逐步积累。",
                 )
-
-    st.caption(f"历史数据库: `{history_db_path()}`")
 
 
 def render_usage_detail(rate_limit: Dict[str, Any]) -> None:

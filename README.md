@@ -37,10 +37,12 @@ https://github.com/onewesong/codex-usage-ui
 codex-usage-ui/
 ├── .gitignore
 ├── README.md
+├── collect_history.py
 ├── codex_usage.py
 ├── codex_usage_app.py
 ├── get-codex-usage.py
 ├── requirements.txt
+├── run-collector.sh
 └── run.sh
 ```
 
@@ -121,6 +123,49 @@ CODEX_HOME=/path/to/.codex ./run.sh
 CODEX_USAGE_DB_PATH=/path/to/history.sqlite3 ./run.sh
 ```
 
+## 独立采集器
+
+历史趋势推荐通过独立采集器持续积累，而不是依赖 UI 一直开着。
+
+启动后台采集器：
+
+```bash
+./run-collector.sh
+```
+
+默认行为：
+
+- 启动后立即采样一次
+- 默认每 `300` 秒采样一次
+- 只有关键字段发生变化才会写入新数据点
+- 无变化时只更新“最近检查”状态，不新增历史点
+
+只执行一次采样并退出：
+
+```bash
+./run-collector.sh --once
+```
+
+自定义采样间隔：
+
+```bash
+./run-collector.sh --interval-seconds 60
+```
+
+输出 JSON，便于脚本集成：
+
+```bash
+./run-collector.sh --once --json
+```
+
+与自定义鉴权和数据库路径组合使用：
+
+```bash
+CODEX_AUTH_PATH=/path/to/auth.json \
+CODEX_USAGE_DB_PATH=/path/to/history.sqlite3 \
+./run-collector.sh --interval-seconds 300
+```
+
 ## CLI 用法
 
 输出人类可读摘要：
@@ -147,7 +192,7 @@ python3 get-codex-usage.py --json-only
 CODEX_AUTH_PATH=/path/to/auth.json python3 get-codex-usage.py --human
 ```
 
-注意：CLI 不会写入历史趋势数据库，历史曲线只会在 UI 页面成功拉取数据时逐步积累。
+注意：CLI 不会写入历史趋势数据库。历史数据推荐由独立采集器持续积累；UI 在成功拉取当前快照时也会走同样的“按变化保存”逻辑。
 
 示例输出：
 
@@ -177,8 +222,9 @@ GET https://chatgpt.com/backend-api/wham/usage
 3. 请求：
    - `https://chatgpt.com/backend-api/wham/usage`
    - 或兼容的 `/api/codex/usage`
-4. 在 UI 中把当前快照写入本地 sqlite 历史库
-5. 将当前快照和历史数据一起渲染成 Streamlit 看板
+4. 将快照归一化为时间序列样本，并与各序列最近一条已保存记录比较
+5. 只有 `used_percent`、`allowed`、`limit_reached`、`reset_at` 任一字段变化时，才写入新的历史点
+6. 将当前快照和历史数据一起渲染成 Streamlit 看板
 
 核心逻辑在：
 
@@ -186,20 +232,34 @@ GET https://chatgpt.com/backend-api/wham/usage
 - `history_store.py`：历史样本写入、sqlite 存储、历史查询
 - `codex_usage_app.py`：Streamlit UI
 - `get-codex-usage.py`：CLI 入口
+- `collect_history.py`：独立定时采集器
+- `run-collector.sh`：采集器启动脚本
 
 ## 历史趋势
 
 历史趋势不是服务端回溯接口，而是本地采样积累出来的。
 
-- UI 每次成功拉取配额快照时，会把当前百分比写入本地 sqlite
+- 默认建议使用独立采集器持续抓取配额快照
+- UI 成功拉取当前快照时，也会执行同样的“按变化保存”逻辑
 - 默认数据库路径：`~/.codex-usage-ui/history.sqlite3`
 - 可以通过 `CODEX_USAGE_DB_PATH` 覆盖默认路径
-- 首次打开页面时通常没有足够样本，曲线会在后续打开页面或点击“刷新数据”后逐步形成
+- 首次运行时通常只有 1 个采样点，曲线需要后续采样慢慢形成
+- 只有以下关键字段发生变化时才会落点：
+  - `used_percent`
+  - `allowed`
+  - `limit_reached`
+  - `reset_at`
 - v1 默认展示核心额度曲线：
   - 主窗口
   - 周窗口
   - Code Review
 - 额外配额趋势放在折叠区域中查看
+- 历史页会显示：
+  - 最近检查时间
+  - 最近保存时间
+  - 最近一次结果
+  - 最近插入条数
+  - 历史数据库路径
 
 时间范围支持：
 
@@ -216,8 +276,38 @@ GET https://chatgpt.com/backend-api/wham/usage
 - 如果你需要自定义历史趋势数据库位置，可以设置 `CODEX_USAGE_DB_PATH`
 - 该工具依赖本机已有登录态，不适合部署到无登录信息的纯服务器
 - 页面中的数据来自 ChatGPT/Codex 后端接口，字段结构未来可能变化
-- 历史趋势依赖本地持续采样；如果从未打开 UI，就不会有历史曲线
+- 如果你希望 UI 关闭后也持续积累历史，应该常驻运行 `run-collector.sh`
+- v1 不做多实例协调，默认同一数据库只运行一个采集器实例
 - `.venv/`、`__pycache__/` 等本地文件已在 `.gitignore` 中忽略
+
+## 托管示例
+
+### cron
+
+每 5 分钟执行一次单次采样：
+
+```cron
+*/5 * * * * cd /path/to/codex-usage-ui && ./run-collector.sh --once >> collector.log 2>&1
+```
+
+### systemd
+
+如果你希望长驻采集器，可以用 `systemd` 托管：
+
+```ini
+[Unit]
+Description=codex-usage-ui collector
+After=network.target
+
+[Service]
+WorkingDirectory=/path/to/codex-usage-ui
+ExecStart=/path/to/codex-usage-ui/run-collector.sh --interval-seconds 300
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
 
 ## 发布到 GitHub
 
