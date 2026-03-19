@@ -100,6 +100,14 @@ def inject_css() -> None:
             font-size: 0.96rem;
           }
 
+          .toolbar-links {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 0.7rem;
+            margin-bottom: 0.65rem;
+          }
+
           .pill {
             display: inline-block;
             border: 1px solid rgba(255, 255, 255, 0.15);
@@ -108,6 +116,32 @@ def inject_css() -> None:
             margin-left: 0.45rem;
             color: var(--text);
             background: rgba(255, 255, 255, 0.03);
+          }
+
+          .github-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 42px;
+            height: 42px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--text);
+            text-decoration: none;
+            transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+          }
+
+          .github-link:hover {
+            transform: translateY(-1px);
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.22);
+          }
+
+          .github-link svg {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
           }
 
           .card {
@@ -565,6 +599,7 @@ def render_page(data: Dict[str, Any], usage_url: str, raw_body: str) -> None:
     plan = str(data.get("plan_type") or "unknown").upper()
     email = str(data.get("email") or "-")
     refreshed_at = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    github_url = "https://github.com/onewesong/codex-usage-ui"
 
     st.markdown(
         html_block(
@@ -574,9 +609,29 @@ def render_page(data: Dict[str, Any], usage_url: str, raw_body: str) -> None:
             <div class="eyebrow">Codex Usage</div>
             <div class="page-title">配额看板</div>
           </div>
-          <div class="toolbar-meta">
-            <span class="pill">Plan: {escape(plan)}</span>
-            <span class="pill">{escape(email)}</span>
+            <div class="toolbar-meta">
+              <div class="toolbar-links">
+                <a
+                  class="github-link"
+                  href="{escape(github_url)}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Open GitHub repository"
+                  title="Open GitHub repository"
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38
+                    0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13
+                    -.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07
+                    -1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12
+                    0 0 .67-.21 2.2.82a7.5 7.5 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12
+                    .51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48
+                    0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"></path>
+                  </svg>
+                </a>
+                <span class="pill">Plan: {escape(plan)}</span>
+                <span class="pill">{escape(email)}</span>
+              </div>
             <div style="margin-top:0.55rem;">最后刷新 {escape(refreshed_at)}</div>
           </div>
         </div>
