@@ -583,8 +583,8 @@ def render_page(data: Dict[str, Any], usage_url: str, raw_body: str) -> None:
         unsafe_allow_html=True,
     )
 
-    overview_tab, history_tab, additional_tab, raw_tab = st.tabs(
-        ["实时总览", "历史趋势", "额外配额", "原始 JSON"]
+    overview_tab, history_tab, raw_tab = st.tabs(
+        ["实时总览", "历史趋势", "原始 JSON"]
     )
 
     with overview_tab:
@@ -594,17 +594,13 @@ def render_page(data: Dict[str, Any], usage_url: str, raw_body: str) -> None:
             if isinstance(data.get("code_review_rate_limit"), dict)
             else {}
         )
+        additional_items = data.get("additional_rate_limits")
+        if isinstance(additional_items, list) and additional_items:
+            render_additional_limits(additional_items)
         render_credits(data.get("credits") if isinstance(data.get("credits"), dict) else {})
 
     with history_tab:
         render_history_section()
-
-    with additional_tab:
-        additional_items = data.get("additional_rate_limits")
-        if isinstance(additional_items, list) and additional_items:
-            render_additional_limits(additional_items)
-        else:
-            st.info("当前没有额外配额数据。")
 
     with raw_tab:
         st.caption(f"来源: `{usage_url}`")
@@ -613,13 +609,6 @@ def render_page(data: Dict[str, Any], usage_url: str, raw_body: str) -> None:
 
 def main() -> None:
     inject_css()
-    refresh_col, _ = st.columns([1, 7])
-    with refresh_col:
-        if st.button("刷新数据", use_container_width=True):
-            load_usage.clear()
-            st.cache_data.clear()
-            st.rerun()
-
     try:
         usage_url, raw_body, data = load_usage()
     except Exception as exc:
