@@ -415,36 +415,6 @@ def render_history_section() -> None:
         unsafe_allow_html=True,
     )
     status = load_history_status()
-    status_rows = [
-        (
-            "最近检查",
-            format_history_status_timestamp(status.get("last_checked_at")),
-            "",
-        ),
-        (
-            "最近保存",
-            format_history_status_timestamp(status.get("last_saved_at")),
-            "",
-        ),
-        (
-            "最近结果",
-            escape(format_history_result(str(status.get("last_result") or ""))),
-            "",
-        ),
-        (
-            "最近插入条数",
-            str(status.get("last_inserted_count", 0)),
-            "",
-        ),
-        (
-            "历史数据库",
-            escape(str(history_db_path())),
-            "",
-        ),
-    ]
-    if status.get("last_error"):
-        status_rows.append(("最近错误", escape(str(status["last_error"])), "status-warn"))
-    render_card("采集状态", metric_rows(status_rows))
 
     range_key = st.radio(
         "历史时间范围",
@@ -489,6 +459,38 @@ def render_history_section() -> None:
                     {"主窗口": "#79a8df", "周窗口": "#7cc045"},
                     "历史样本不足，打开页面或刷新后会逐步积累。",
                 )
+
+    status_rows = [
+        (
+            "最近检查",
+            format_history_status_timestamp(status.get("last_checked_at")),
+            "",
+        ),
+        (
+            "最近保存",
+            format_history_status_timestamp(status.get("last_saved_at")),
+            "",
+        ),
+        (
+            "最近结果",
+            escape(format_history_result(str(status.get("last_result") or ""))),
+            "",
+        ),
+        (
+            "最近插入条数",
+            str(status.get("last_inserted_count", 0)),
+            "",
+        ),
+        (
+            "历史数据库",
+            escape(str(history_db_path())),
+            "",
+        ),
+    ]
+    if status.get("last_error"):
+        status_rows.append(("最近错误", escape(str(status["last_error"])), "status-warn"))
+    with st.expander("采集状态", expanded=False):
+        render_card("采集状态", metric_rows(status_rows))
 
 
 def render_usage_detail(rate_limit: Dict[str, Any]) -> None:
