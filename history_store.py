@@ -48,7 +48,6 @@ SERIES_ID_COLUMNS = (
     "limit_name",
     "metered_feature",
 )
-CHANGE_COLUMNS = ("used_percent", "allowed", "limit_reached", "reset_at")
 
 
 def history_db_path() -> Path:
@@ -301,13 +300,26 @@ def _load_latest_rows(conn: sqlite3.Connection, rows: Sequence[Dict[str, Any]]) 
     return latest_by_key
 
 
+def _is_zero_usage(value: Any) -> bool:
+    return value in (0, 0.0, None)
+
+
 def _has_material_change(current: Dict[str, Any], previous: Optional[Dict[str, Any]]) -> bool:
     if previous is None:
         return True
-    for column in CHANGE_COLUMNS:
+
+    for column in ("used_percent", "allowed", "limit_reached"):
         if current.get(column) != previous.get(column):
             return True
-    return False
+
+    current_used = current.get("used_percent")
+    previous_used = previous.get("used_percent")
+    if _is_zero_usage(current_used) and _is_zero_usage(previous_used):
+        # Some rolling windows report reset_at as "now + window" when usage is zero.
+        # That value drifts forward on every poll and would otherwise create noisy duplicates.
+        return False
+
+    return current.get("reset_at") != previous.get("reset_at")
 
 
 def _upsert_history_status(
