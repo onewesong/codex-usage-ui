@@ -196,23 +196,6 @@ def extract_history_samples(data: Dict[str, Any], sampled_at: Optional[int] = No
                 )
             )
 
-    code_review = data.get("code_review_rate_limit")
-    if isinstance(code_review, dict):
-        primary = code_review.get("primary_window")
-        if isinstance(primary, dict):
-            rows.append(
-                _window_record(
-                    sampled_at=timestamp,
-                    account_id=account_id,
-                    plan_type=plan_type,
-                    metric_group="code_review_rate_limit",
-                    metric_name="weekly_usage",
-                    series_label="Code Review",
-                    parent_limit=code_review,
-                    window=primary,
-                )
-            )
-
     additional_limits = data.get("additional_rate_limits")
     if isinstance(additional_limits, list):
         for item in additional_limits:

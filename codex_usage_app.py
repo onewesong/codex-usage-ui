@@ -524,14 +524,6 @@ def render_history_section() -> None:
         "历史样本不足，打开页面或刷新后会逐步积累。",
     )
 
-    review_frame = history_frame[history_frame["metric_group"] == "code_review_rate_limit"].copy()
-    render_history_block(
-        "Code Review 趋势",
-        review_frame,
-        {"Code Review": "#7cc045"},
-        "历史样本不足，打开页面或刷新后会逐步积累。",
-    )
-
     with st.expander("额外配额趋势", expanded=False):
         additional_frame = history_frame[history_frame["metric_group"] == "additional_rate_limit"].copy()
         if additional_frame.empty:
@@ -618,22 +610,6 @@ def render_usage_detail(rate_limit: Dict[str, Any]) -> None:
     if not sections:
         sections.append('<div class="muted-note">暂无配额使用数据。</div>')
     render_card("配额使用详情", "".join(sections))
-
-
-def render_code_review(rate_limit: Dict[str, Any]) -> None:
-    primary = rate_limit.get("primary_window") if isinstance(rate_limit, dict) else None
-    status_text, status_class = status_badge(rate_limit if isinstance(rate_limit, dict) else {})
-    used_percent = clamp_percent(primary.get("used_percent")) if isinstance(primary, dict) else 0
-    cycle = format_window_span(primary.get("limit_window_seconds")) if isinstance(primary, dict) else "未知"
-    rows = metric_rows(
-        [
-            ("状态", escape(status_text), status_class),
-            ("周配额已用", f"{used_percent:.0f}%", ""),
-            ("重置周期", escape(cycle), ""),
-        ]
-    )
-    html = rows + progress_bar(used_percent, "var(--green)")
-    render_card("Code Review 配额", html)
 
 
 def render_additional_limits(items: Any) -> None:
@@ -749,11 +725,6 @@ def render_page(data: Dict[str, Any], usage_url: str, raw_body: str) -> None:
 
     with overview_tab:
         render_usage_detail(data.get("rate_limit") if isinstance(data.get("rate_limit"), dict) else {})
-        render_code_review(
-            data.get("code_review_rate_limit")
-            if isinstance(data.get("code_review_rate_limit"), dict)
-            else {}
-        )
         additional_items = data.get("additional_rate_limits")
         if isinstance(additional_items, list) and additional_items:
             render_additional_limits(additional_items)

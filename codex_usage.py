@@ -172,21 +172,6 @@ def human_summary(data: Dict[str, Any]) -> None:
         emit_window_block("主窗口", rate_limit.get("primary_window"))
         emit_window_block("周窗口", rate_limit.get("secondary_window"))
 
-    code_review_limit = data.get("code_review_rate_limit")
-    if isinstance(code_review_limit, dict):
-        emit_section("Code Review 配额")
-        primary = code_review_limit.get("primary_window") or {}
-        emit_kv_rows(
-            [
-                ("状态", format_status(code_review_limit)),
-                ("周配额已用", f"{int(primary.get('used_percent', 0))}%"),
-                ("进度条", progress_bar_text(int(primary.get("used_percent", 0)))),
-                ("重置周期", format_window_span(primary.get("limit_window_seconds"))),
-                ("重置剩余", format_remaining(primary.get("reset_after_seconds"))),
-                ("重置时间", format_reset_at(primary.get("reset_at"))),
-            ]
-        )
-
     additional_limits = data.get("additional_rate_limits")
     if isinstance(additional_limits, list):
         for item in additional_limits:
