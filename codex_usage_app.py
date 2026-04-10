@@ -10,6 +10,11 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from auto_collector import (
+    AUTO_COLLECTOR_DEFAULT_INTERVAL_SECONDS,
+    auto_collector_status,
+)
+
 from codex_usage import (
     fetch_usage_snapshot,
     format_remaining,
@@ -30,6 +35,19 @@ HISTORY_RANGE_OPTIONS = ["24H", "7D", "30D", "全部"]
 
 def html_block(content: str) -> str:
     return dedent(content).strip()
+
+
+def format_auto_collector_state(status: Dict[str, Any]) -> Tuple[str, str]:
+    state = str(status.get("state") or "unknown")
+    if state == "running":
+        return "运行中", "status-ok"
+    if state == "disabled":
+        return "已禁用", ""
+    if state == "stopped":
+        return "未运行", "status-warn"
+    if state == "error":
+        return "启动失败", "status-warn"
+    return "未知", ""
 
 
 def inject_css() -> None:
@@ -485,6 +503,8 @@ def render_history_section() -> None:
         unsafe_allow_html=True,
     )
     status = load_history_status()
+    collector_status = auto_collector_status()
+    collector_state_text, collector_state_class = format_auto_collector_state(collector_status)
 
     range_key = st.radio(
         "历史时间范围",
@@ -532,6 +552,16 @@ def render_history_section() -> None:
 
     status_rows = [
         (
+            "自动采集器",
+            escape(collector_state_text),
+            collector_state_class,
+        ),
+        (
+            "自动采样间隔",
+            f"{int(collector_status.get('interval_seconds', AUTO_COLLECTOR_DEFAULT_INTERVAL_SECONDS))} 秒",
+            "",
+        ),
+        (
             "最近检查",
             format_history_status_timestamp(status.get("last_checked_at")),
             "",
@@ -552,11 +582,25 @@ def render_history_section() -> None:
             "",
         ),
         (
+            "最近来源",
+            escape(str(status.get("last_source") or "尚无")),
+            "",
+        ),
+        (
             "历史数据库",
             escape(str(history_db_path())),
             "",
         ),
+        (
+            "采集日志",
+            escape(str(collector_status.get("log_path") or "尚无")),
+            "",
+        ),
     ]
+    if collector_status.get("pid"):
+        status_rows.append(("自动采集器 PID", str(collector_status["pid"]), ""))
+    if collector_status.get("error"):
+        status_rows.append(("自动采集错误", escape(str(collector_status["error"])), "status-warn"))
     if status.get("last_error"):
         status_rows.append(("最近错误", escape(str(status["last_error"])), "status-warn"))
     with st.expander("采集状态", expanded=False):

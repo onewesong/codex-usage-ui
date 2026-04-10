@@ -29,6 +29,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="print each collection result as JSON",
     )
+    parser.add_argument(
+        "--source",
+        default="collector",
+        help="history source label written into status metadata (default: collector)",
+    )
     return parser.parse_args()
 
 
@@ -38,12 +43,12 @@ def timestamp_text(unix_ts: int | None) -> str:
     return datetime.fromtimestamp(unix_ts).astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def collect_once() -> Dict[str, Any]:
+def collect_once(source: str = "collector") -> Dict[str, Any]:
     try:
         _, _, data = fetch_usage_snapshot()
-        result = save_history_snapshot_if_changed(data, source="collector")
+        result = save_history_snapshot_if_changed(data, source=source)
     except Exception as exc:
-        result = mark_history_check_failed(str(exc), source="collector")
+        result = mark_history_check_failed(str(exc), source=source)
     return result
 
 
@@ -75,7 +80,7 @@ def main() -> None:
     interval_seconds = max(1, args.interval_seconds)
 
     while True:
-        result = collect_once()
+        result = collect_once(args.source)
         print_result(result, args.json)
         if args.once:
             return

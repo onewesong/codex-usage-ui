@@ -15,6 +15,8 @@ if ! "${VENV_DIR}/bin/python" -c "import streamlit" >/dev/null 2>&1; then
   "${VENV_DIR}/bin/python" -m pip install -r "${ROOT_DIR}/requirements.txt"
 fi
 
+"${VENV_DIR}/bin/python" "${ROOT_DIR}/auto_collector.py" >/dev/null
+
 exec "${VENV_DIR}/bin/python" -m streamlit run "${ROOT_DIR}/codex_usage_app.py" \
   --server.address 0.0.0.0 \
   --server.port "${PORT}" \

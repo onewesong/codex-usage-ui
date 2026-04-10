@@ -24,6 +24,7 @@ English | [简体中文](README.zh-CN.md)
 
 - Streamlit dashboard with `实时总览`, `历史趋势`, and `原始 JSON` tabs
 - local SQLite history storage with change-based sampling
+- auto collector started by `run.sh` for interval-based background sampling
 - standalone collector for long-running background collection
 - human-readable CLI summary with Unicode progress bars
 - support for custom auth and history database paths
@@ -70,6 +71,8 @@ Start the dashboard:
 ./run.sh
 ```
 
+From this version on, running `./run.sh` will automatically start the background collector, so you do not need to open the page first.
+
 Start the standalone collector:
 
 ```bash
@@ -98,7 +101,9 @@ python3 get-codex-usage.py --json-only
 
 History charts are built from local samples, not from a server-side history API.
 
-The standalone collector is recommended for long-running tracking:
+By default, running `./run.sh` will start a background collector automatically.
+
+For long-running tracking, you can still use the standalone collector if you prefer:
 
 ```bash
 ./run-collector.sh
@@ -110,6 +115,8 @@ Default behavior:
 - collect every `300` seconds by default
 - save a new data point only when the snapshot changes
 - keep checking even if no new point is saved
+- `History Trend -> 采集状态` shows the auto-collector state, PID, log path, and latest source
+- collection starts as soon as `./run.sh` is running, even before any browser session opens
 
 The following fields are used to decide whether a series changed:
 
@@ -166,6 +173,8 @@ The CLI does not continuously collect history by itself. Use `run-collector.sh` 
 - `CODEX_HOME`: override the default Codex home directory instead of `~/.codex`
 - `PORT`: override the default Streamlit port `8501`
 - `CODEX_USAGE_DB_PATH`: override the default history database path instead of `~/.codex-usage-ui/history.sqlite3`
+- `CODEX_USAGE_AUTO_COLLECTOR`: enable or disable the background collector started by `run.sh`, default `1`
+- `CODEX_USAGE_AUTO_COLLECTOR_INTERVAL_SECONDS`: interval for the auto collector, default `300`
 
 Examples:
 
@@ -175,6 +184,14 @@ CODEX_AUTH_PATH=/path/to/auth.json ./run.sh
 
 ```bash
 CODEX_HOME=/path/to/.codex CODEX_USAGE_DB_PATH=/path/to/history.sqlite3 ./run-collector.sh
+```
+
+```bash
+CODEX_USAGE_AUTO_COLLECTOR=0 ./run.sh
+```
+
+```bash
+CODEX_USAGE_AUTO_COLLECTOR_INTERVAL_SECONDS=60 ./run.sh
 ```
 
 ## How It Works
@@ -199,4 +216,5 @@ Core files:
 
 - this project relies on your local Codex / ChatGPT login state
 - the first history chart usually has too few points until more samples accumulate
-- the UI can write history too, but the standalone collector is better for continuous tracking
+- the UI can write history, and `run.sh` now also starts a background collector by default
+- if you prefer a separately managed process, disable auto collection and keep using `run-collector.sh`

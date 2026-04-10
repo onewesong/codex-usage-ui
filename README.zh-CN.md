@@ -22,6 +22,7 @@
 
 - 基于 Streamlit 的看板，包含 `实时总览`、`历史趋势`、`原始 JSON`
 - 使用本地 SQLite 存储历史数据，并按变化落点
+- 默认由 `run.sh` 自动拉起后台采集器并定时采样
 - 支持独立采集器常驻后台采样
 - CLI 支持带 Unicode 进度条的人类可读输出
 - 支持自定义鉴权文件和历史数据库路径
@@ -68,6 +69,8 @@ PORT=8511 ./run.sh
 ./run.sh
 ```
 
+从当前版本开始，执行 `./run.sh` 时就会自动拉起后台采集器，不需要先打开页面。
+
 启动独立采集器：
 
 ```bash
@@ -96,7 +99,9 @@ python3 get-codex-usage.py --json-only
 
 历史趋势来自本地持续采样，并不是服务端提供的历史接口。
 
-如果你希望长期观察曲线，建议使用独立采集器常驻运行：
+默认情况下，执行 `./run.sh` 时会自动启动后台采集器并持续采样。
+
+如果你希望长期观察曲线，也仍然可以单独使用独立采集器常驻运行：
 
 ```bash
 ./run-collector.sh
@@ -108,6 +113,8 @@ python3 get-codex-usage.py --json-only
 - 默认每 `300` 秒采样一次
 - 只有快照发生变化时才保存新的数据点
 - 即使没有新数据点，也会持续检查
+- `历史趋势 -> 采集状态` 中可以看到自动采集器状态、PID、日志路径和最近来源
+- 即使你还没打开浏览器页面，只要 `./run.sh` 已经启动，采集也会开始
 
 以下字段用于判断某条时间序列是否发生变化：
 
@@ -164,6 +171,8 @@ CLI 本身不会常驻采集历史数据；如果要长期追踪，请使用 `ru
 - `CODEX_HOME`：覆盖默认 Codex 目录 `~/.codex`
 - `PORT`：覆盖默认 Streamlit 端口 `8501`
 - `CODEX_USAGE_DB_PATH`：覆盖默认历史数据库路径 `~/.codex-usage-ui/history.sqlite3`
+- `CODEX_USAGE_AUTO_COLLECTOR`：是否启用 `run.sh` 自动拉起的后台采集器，默认 `1`
+- `CODEX_USAGE_AUTO_COLLECTOR_INTERVAL_SECONDS`：自动后台采样间隔，默认 `300`
 
 示例：
 
@@ -173,6 +182,14 @@ CODEX_AUTH_PATH=/path/to/auth.json ./run.sh
 
 ```bash
 CODEX_HOME=/path/to/.codex CODEX_USAGE_DB_PATH=/path/to/history.sqlite3 ./run-collector.sh
+```
+
+```bash
+CODEX_USAGE_AUTO_COLLECTOR=0 ./run.sh
+```
+
+```bash
+CODEX_USAGE_AUTO_COLLECTOR_INTERVAL_SECONDS=60 ./run.sh
 ```
 
 ## 工作原理
@@ -197,4 +214,5 @@ CODEX_HOME=/path/to/.codex CODEX_USAGE_DB_PATH=/path/to/history.sqlite3 ./run-co
 
 - 这个项目依赖本机已有的 Codex / ChatGPT 登录态
 - 历史曲线在刚开始时通常点数较少，需要后续采样逐步积累
-- UI 也会写历史，但要稳定持续采集，独立采集器更合适
+- UI 也会写历史；默认情况下 `run.sh` 还会自动拉起一个后台采集器
+- 如果你更偏好自己托管采集进程，也可以关闭自动采集后继续使用 `run-collector.sh`
