@@ -7,11 +7,16 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
+import subprocess
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
+
+
+CUSTOM_FETCH_SCRIPT_ENV = "CODEX_USAGE_FETCH_SCRIPT"
 
 
 def codex_home() -> Path:
@@ -111,7 +116,50 @@ def fetch_usage(usage_url: str, access_token: str, account_id: str) -> Tuple[str
         ) from err
 
 
+def fetch_usage_from_script(command: str) -> Tuple[str, Dict[str, Any]]:
+    """Run a user-provided command whose stdout is an upstream usage JSON payload."""
+    try:
+        args = shlex.split(command)
+    except ValueError as exc:
+        raise ValueError(f"invalid {CUSTOM_FETCH_SCRIPT_ENV}: {exc}") from exc
+    if not args:
+        raise ValueError(f"{CUSTOM_FETCH_SCRIPT_ENV} is empty")
+
+    try:
+        result = subprocess.run(
+            args,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"custom usage script not found: {args[0]}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("custom usage script timed out after 30 seconds") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or "").strip()
+        message = f"custom usage script failed with exit code {exc.returncode}"
+        raise RuntimeError(f"{message}: {detail}" if detail else message) from exc
+
+    body = result.stdout.strip()
+    if not body:
+        raise ValueError("custom usage script returned empty stdout; expected usage JSON")
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"custom usage script returned invalid JSON: {exc.msg}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("custom usage script must return a JSON object matching the upstream response")
+    return body, data
+
+
 def fetch_usage_snapshot(home: Optional[Path] = None) -> Tuple[str, str, Dict[str, Any]]:
+    custom_script = os.environ.get(CUSTOM_FETCH_SCRIPT_ENV, "").strip()
+    if custom_script:
+        body, data = fetch_usage_from_script(custom_script)
+        return f"custom script ({CUSTOM_FETCH_SCRIPT_ENV})", body, data
+
     active_home = home or codex_home()
     access_token, account_id = load_auth(active_home)
     configured_base_url = parse_config_base_url(active_home)

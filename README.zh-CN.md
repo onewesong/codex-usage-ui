@@ -173,6 +173,20 @@ CLI 本身不会常驻采集历史数据；如果要长期追踪，请使用 `ru
 - `CODEX_USAGE_DB_PATH`：覆盖默认历史数据库路径 `~/.codex-usage-ui/history.sqlite3`
 - `CODEX_USAGE_AUTO_COLLECTOR`：是否启用 `run.sh` 自动拉起的后台采集器，默认 `1`
 - `CODEX_USAGE_AUTO_COLLECTOR_INTERVAL_SECONDS`：自动后台采样间隔，默认 `300`
+- `CODEX_USAGE_FETCH_SCRIPT`：自定义用量获取脚本（或包含参数的命令）。设置后不再读取本机登录态或请求默认接口，而是执行该命令并使用其标准输出。
+
+自定义脚本的标准输出必须是一个与上游 usage 接口完全相同的 JSON 对象；诊断信息请写到标准错误。该配置会同时作用于 Web UI、CLI 和历史采集器。例如：
+
+```bash
+CODEX_USAGE_FETCH_SCRIPT="/opt/scripts/fetch-codex-usage.sh" ./run.sh
+```
+
+脚本示例：
+
+```bash
+#!/usr/bin/env bash
+curl -fsS -H "Authorization: Bearer $MY_USAGE_TOKEN" https://example.com/api/codex/usage
+```
 
 示例：
 
@@ -190,6 +204,41 @@ CODEX_USAGE_AUTO_COLLECTOR=0 ./run.sh
 
 ```bash
 CODEX_USAGE_AUTO_COLLECTOR_INTERVAL_SECONDS=60 ./run.sh
+```
+
+## Systemd 后台服务
+
+如果希望开机自启并由 systemd 托管，可以安装 UI 和采集器两个服务：
+
+```bash
+sudo ./systemd/install-systemd.sh
+```
+
+安装后会生成并启动：
+
+- `codex-usage-ui.service`：Streamlit 看板，默认监听 `18081`
+- `codex-usage-collector.service`：历史采集器，默认每 `300` 秒采样一次
+
+常用命令：
+
+```bash
+systemctl status codex-usage-ui.service codex-usage-collector.service
+journalctl -u codex-usage-ui.service -f
+journalctl -u codex-usage-collector.service -f
+systemctl restart codex-usage-ui.service
+systemctl disable --now codex-usage-ui.service codex-usage-collector.service
+```
+
+可在安装时覆盖默认值：
+
+```bash
+sudo PORT=8511 COLLECT_INTERVAL_SECONDS=60 ./systemd/install-systemd.sh
+```
+
+如需指定运行用户或鉴权/数据库路径：
+
+```bash
+sudo SERVICE_USER="$USER" CODEX_HOME="$HOME/.codex" CODEX_USAGE_DB_PATH="$HOME/.codex-usage-ui/history.sqlite3" ./systemd/install-systemd.sh
 ```
 
 ## 工作原理

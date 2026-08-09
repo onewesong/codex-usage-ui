@@ -175,6 +175,13 @@ The CLI does not continuously collect history by itself. Use `run-collector.sh` 
 - `CODEX_USAGE_DB_PATH`: override the default history database path instead of `~/.codex-usage-ui/history.sqlite3`
 - `CODEX_USAGE_AUTO_COLLECTOR`: enable or disable the background collector started by `run.sh`, default `1`
 - `CODEX_USAGE_AUTO_COLLECTOR_INTERVAL_SECONDS`: interval for the auto collector, default `300`
+- `CODEX_USAGE_FETCH_SCRIPT`: custom usage-fetch script (or command with arguments). When set, its stdout is used instead of local auth and the default usage endpoint.
+
+The custom script must write one JSON object in the same format as the upstream usage endpoint to stdout; write diagnostics to stderr. This applies to the Web UI, CLI, and history collector.
+
+```bash
+CODEX_USAGE_FETCH_SCRIPT="/opt/scripts/fetch-codex-usage.sh" ./run.sh
+```
 
 Examples:
 
@@ -192,6 +199,41 @@ CODEX_USAGE_AUTO_COLLECTOR=0 ./run.sh
 
 ```bash
 CODEX_USAGE_AUTO_COLLECTOR_INTERVAL_SECONDS=60 ./run.sh
+```
+
+## Systemd Services
+
+To run the dashboard and collector in the background with systemd:
+
+```bash
+sudo ./systemd/install-systemd.sh
+```
+
+This installs and starts:
+
+- `codex-usage-ui.service`: Streamlit dashboard on port `18081` by default
+- `codex-usage-collector.service`: history collector, sampling every `300` seconds by default
+
+Useful commands:
+
+```bash
+systemctl status codex-usage-ui.service codex-usage-collector.service
+journalctl -u codex-usage-ui.service -f
+journalctl -u codex-usage-collector.service -f
+systemctl restart codex-usage-ui.service
+systemctl disable --now codex-usage-ui.service codex-usage-collector.service
+```
+
+Override defaults during installation:
+
+```bash
+sudo PORT=8511 COLLECT_INTERVAL_SECONDS=60 ./systemd/install-systemd.sh
+```
+
+Set a specific service user or auth/database paths:
+
+```bash
+sudo SERVICE_USER="$USER" CODEX_HOME="$HOME/.codex" CODEX_USAGE_DB_PATH="$HOME/.codex-usage-ui/history.sqlite3" ./systemd/install-systemd.sh
 ```
 
 ## How It Works
