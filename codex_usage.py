@@ -116,6 +116,30 @@ def fetch_usage(usage_url: str, access_token: str, account_id: str) -> Tuple[str
         ) from err
 
 
+def account_snapshots(data: Any) -> list[Dict[str, Any]]:
+    """Validate the optional multi-account envelope; keep legacy payloads intact."""
+    if not isinstance(data, dict):
+        raise ValueError("usage payload must be a JSON object")
+    if "accounts" not in data:
+        return [data]
+    accounts = data["accounts"]
+    if not isinstance(accounts, list):
+        raise ValueError("accounts must be a JSON array")
+    seen = set()
+    for account in accounts:
+        if not isinstance(account, dict) or "accounts" in account:
+            raise ValueError("each account must be a usage JSON object, not an envelope")
+        account_id = account.get("account_id")
+        if not isinstance(account_id, str) or not account_id.strip():
+            raise ValueError("each account requires a nonempty string account_id")
+        if account_id in seen:
+            raise ValueError("each account_id must be unique within a snapshot")
+        seen.add(account_id)
+        if "error" in account and (not isinstance(account["error"], str) or not account["error"].strip()):
+            raise ValueError("account error must be a nonempty string when provided")
+    return accounts
+
+
 def fetch_usage_from_script(command: str) -> Tuple[str, Dict[str, Any]]:
     """Run a user-provided command whose stdout is an upstream usage JSON payload."""
     try:
@@ -149,8 +173,7 @@ def fetch_usage_from_script(command: str) -> Tuple[str, Dict[str, Any]]:
         data = json.loads(body)
     except json.JSONDecodeError as exc:
         raise ValueError(f"custom usage script returned invalid JSON: {exc.msg}") from exc
-    if not isinstance(data, dict):
-        raise ValueError("custom usage script must return a JSON object matching the upstream response")
+    account_snapshots(data)
     return body, data
 
 
@@ -166,6 +189,7 @@ def fetch_usage_snapshot(home: Optional[Path] = None) -> Tuple[str, str, Dict[st
     base_url = configured_base_url or "https://chatgpt.com/backend-api"
     usage_url = build_usage_url(base_url)
     body, data = fetch_usage(usage_url, access_token, account_id)
+    account_snapshots(data)
     return usage_url, body, data
 
 
@@ -211,6 +235,17 @@ def emit_section(title: str) -> None:
 
 
 def human_summary(data: Dict[str, Any]) -> None:
+    if "accounts" in data:
+        accounts = account_snapshots(data)
+        if not accounts:
+            print("暂无账号")
+        for account in accounts:
+            emit_section(f"账号: {account.get('email') or account['account_id']}")
+            if account.get("error"):
+                print(f"读取失败: {account['error']}")
+            else:
+                human_summary(account)
+        return
     plan = data.get("plan_type") or "未知"
     print(f"订阅计划: {plan}")
 

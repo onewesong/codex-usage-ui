@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from html import escape
 from textwrap import dedent
@@ -16,6 +17,7 @@ from auto_collector import (
 )
 
 from codex_usage import (
+    account_snapshots,
     fetch_usage_snapshot,
     format_remaining,
     format_reset_at,
@@ -488,7 +490,7 @@ def render_history_block(
     st.altair_chart(history_chart(frame, color_map), use_container_width=True)
 
 
-def render_history_section() -> None:
+def render_history_section(account_id_filter: str | None = None) -> None:
     st.markdown(
         html_block(
             """
@@ -514,7 +516,7 @@ def render_history_section() -> None:
         label_visibility="collapsed",
         key="history_range",
     )
-    history_frame = load_history_samples(range_key)
+    history_frame = load_history_samples(range_key, account_id=account_id_filter)
 
     core_frame = history_frame[history_frame["metric_group"] == "rate_limit"].copy()
     render_history_block(
@@ -651,7 +653,7 @@ def render_credits(credits: Dict[str, Any]) -> None:
     render_card("积分余额", rows)
 
 
-def render_page(data: Dict[str, Any], usage_url: str, raw_body: str) -> None:
+def render_page(data: Dict[str, Any], usage_url: str, raw_body: str, account_id_filter: str | None = None) -> None:
     plan = str(data.get("plan_type") or "unknown").upper()
     email = str(data.get("email") or "-")
     refreshed_at = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
@@ -731,7 +733,7 @@ def render_page(data: Dict[str, Any], usage_url: str, raw_body: str) -> None:
         render_credits(data.get("credits") if isinstance(data.get("credits"), dict) else {})
 
     with history_tab:
-        render_history_section()
+        render_history_section(account_id_filter)
 
     with raw_tab:
         st.caption(f"来源: `{usage_url}`")
@@ -742,12 +744,36 @@ def main() -> None:
     inject_css()
     try:
         usage_url, raw_body, data = load_usage()
+        accounts = account_snapshots(data)
     except Exception as exc:
         st.error(f"加载 Codex 配额失败: {exc}")
         st.info("请先执行 `codex login chatgpt`，并确认本机能访问 ChatGPT 后端。")
         return
 
-    render_page(data, usage_url, raw_body)
+    account_id_filter = str(data.get("account_id") or "")
+    if "accounts" in data:
+        if not accounts:
+            st.warning("暂无 Codex 账号。")
+            return
+        by_id = {account["account_id"]: account for account in accounts}
+        identifiers = sorted(by_id)
+        if st.session_state.get("usage_account_id") not in by_id:
+            st.session_state["usage_account_id"] = identifiers[0]
+        selected = st.selectbox(
+            "账号", identifiers, key="usage_account_id",
+            format_func=lambda identifier: f"{by_id[identifier].get('email') or identifier} · {by_id[identifier].get('plan_type', 'unknown')}",
+        )
+        data = by_id[selected]
+        account_id_filter = selected
+        if data.get("error"):
+            st.error(f"该账号配额读取失败：{data['error']}")
+            if st.button("重新获取数据", key="retry_account"):
+                load_usage.clear()
+                st.rerun()
+            render_history_section(account_id_filter)
+            return
+        raw_body = json.dumps(data, ensure_ascii=False, indent=2)
+    render_page(data, usage_url, raw_body, account_id_filter)
 
 
 if __name__ == "__main__":

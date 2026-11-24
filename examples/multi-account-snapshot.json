@@ -1,0 +1,26 @@
+{
+  "accounts": [
+    {
+      "account_id": "example-account-a",
+      "email": "alice@example.com",
+      "plan_type": "plus",
+      "rate_limit": {
+        "allowed": true,
+        "limit_reached": false,
+        "primary_window": {"used_percent": 25, "limit_window_seconds": 18000},
+        "secondary_window": {"used_percent": 40, "limit_window_seconds": 604800}
+      }
+    },
+    {
+      "account_id": "example-account-b",
+      "email": "bob@example.com",
+      "plan_type": "pro",
+      "rate_limit": {
+        "allowed": true,
+        "limit_reached": false,
+        "primary_window": {"used_percent": 10, "limit_window_seconds": 18000},
+        "secondary_window": {"used_percent": 15, "limit_window_seconds": 604800}
+      }
+    }
+  ]
+}
