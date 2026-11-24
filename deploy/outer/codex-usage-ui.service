@@ -1,0 +1,17 @@
+[Unit]
+Description=Codex Usage UI (local CPA)
+Wants=codex-usage-collector.service
+After=cliproxyapi.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/cpa/codex-usage-ui
+EnvironmentFile=/home/cpa/.config/codex-usage-ui/service.env
+ExecStart=/home/cpa/codex-usage-ui/.venv/bin/python -m streamlit run codex_usage_app.py --server.address 127.0.0.1 --server.port 8501 --server.headless true --browser.serverAddress codex-usage.outer.r9s.net --browser.serverPort 443 --browser.gatherUsageStats false
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

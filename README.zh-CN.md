@@ -26,6 +26,7 @@
 - 支持独立采集器常驻后台采样
 - CLI 支持带 Unicode 进度条的人类可读输出
 - 支持自定义鉴权文件和历史数据库路径
+- 支持自定义采集器返回多账号快照，切换账号查看独立配额与历史
 - 不依赖额外后端服务
 
 ## 安装
@@ -187,6 +188,8 @@ CODEX_USAGE_FETCH_SCRIPT="/opt/scripts/fetch-codex-usage.sh" ./run.sh
 #!/usr/bin/env bash
 curl -fsS -H "Authorization: Bearer $MY_USAGE_TOKEN" https://example.com/api/codex/usage
 ```
+
+多账号采集器也可以返回 `{"accounts": [<账号一的 usage JSON>, <账号二的 usage JSON>]}`。每个账号需有稳定且唯一的 `account_id`，可附带 `email`；页面按账号切换，历史变化检测与曲线均按账号隔离。单账号失败可在该账号对象中返回 `error`，不会阻止其他账号展示。通过本机 CLIProxyAPI 获取全部 Codex 账号配额的脚本与用户级 systemd 部署见 [outer 部署说明](deploy/outer/README.md)。
 
 示例：
 

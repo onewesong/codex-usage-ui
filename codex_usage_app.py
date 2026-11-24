@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from html import escape
 from textwrap import dedent
@@ -488,7 +489,7 @@ def render_history_block(
     st.altair_chart(history_chart(frame, color_map), use_container_width=True)
 
 
-def render_history_section() -> None:
+def render_history_section(account_id_filter: str | None = None) -> None:
     st.markdown(
         html_block(
             """
@@ -515,6 +516,8 @@ def render_history_section() -> None:
         key="history_range",
     )
     history_frame = load_history_samples(range_key)
+    if account_id_filter is not None:
+        history_frame = history_frame[history_frame["account_id"].fillna("").astype(str) == account_id_filter].copy()
 
     core_frame = history_frame[history_frame["metric_group"] == "rate_limit"].copy()
     render_history_block(
@@ -651,7 +654,7 @@ def render_credits(credits: Dict[str, Any]) -> None:
     render_card("积分余额", rows)
 
 
-def render_page(data: Dict[str, Any], usage_url: str, raw_body: str) -> None:
+def render_page(data: Dict[str, Any], usage_url: str, raw_body: str, account_id_filter: str | None = None) -> None:
     plan = str(data.get("plan_type") or "unknown").upper()
     email = str(data.get("email") or "-")
     refreshed_at = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
@@ -731,7 +734,7 @@ def render_page(data: Dict[str, Any], usage_url: str, raw_body: str) -> None:
         render_credits(data.get("credits") if isinstance(data.get("credits"), dict) else {})
 
     with history_tab:
-        render_history_section()
+        render_history_section(account_id_filter)
 
     with raw_tab:
         st.caption(f"来源: `{usage_url}`")
@@ -747,7 +750,24 @@ def main() -> None:
         st.info("请先执行 `codex login chatgpt`，并确认本机能访问 ChatGPT 后端。")
         return
 
-    render_page(data, usage_url, raw_body)
+    accounts = data.get("accounts")
+    account_id_filter = None
+    if isinstance(accounts, list):
+        accounts = [account for account in accounts if isinstance(account, dict)]
+        if not accounts:
+            st.warning("暂无 Codex 账号。")
+            return
+        selected = st.selectbox(
+            "账号", range(len(accounts)),
+            format_func=lambda i: f"{accounts[i].get('email') or accounts[i].get('account_id')} · {accounts[i].get('plan_type', 'unknown')}",
+        )
+        data = accounts[selected]
+        if data.get("error"):
+            st.error(f"该账号配额读取失败：{data['error']}")
+            return
+        account_id_filter = str(data.get("account_id") or "")
+        raw_body = json.dumps(data, ensure_ascii=False, indent=2)
+    render_page(data, usage_url, raw_body, account_id_filter)
 
 
 if __name__ == "__main__":

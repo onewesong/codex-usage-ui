@@ -42,6 +42,7 @@ HISTORY_STATUS_DEFAULTS = {
     "last_error": None,
 }
 SERIES_ID_COLUMNS = (
+    "account_id",
     "metric_group",
     "metric_name",
     "series_label",
@@ -161,6 +162,10 @@ def _window_record(
 
 def extract_history_samples(data: Dict[str, Any], sampled_at: Optional[int] = None) -> List[Dict[str, Any]]:
     timestamp = sampled_at or int(datetime.now(timezone.utc).timestamp())
+    accounts = data.get("accounts")
+    if isinstance(accounts, list):
+        return [row for account in accounts if isinstance(account, dict) and not account.get("error")
+                for row in extract_history_samples(account, sampled_at=timestamp)]
     account_id = str(data.get("account_id") or "")
     plan_type = str(data.get("plan_type") or "")
     rows: List[Dict[str, Any]] = []
@@ -248,7 +253,7 @@ def _series_key(record: Dict[str, Any]) -> Tuple[Any, ...]:
 def _load_latest_rows(conn: sqlite3.Connection, rows: Sequence[Dict[str, Any]]) -> Dict[Tuple[Any, ...], Dict[str, Any]]:
     latest_by_key: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
     for row in rows:
-        metric_group, metric_name, series_label, limit_name, metered_feature = _series_key(row)
+        account_id, metric_group, metric_name, series_label, limit_name, metered_feature = _series_key(row)
         current = conn.execute(
             """
             SELECT
@@ -262,7 +267,8 @@ def _load_latest_rows(conn: sqlite3.Connection, rows: Sequence[Dict[str, Any]]) 
                 limit_reached,
                 reset_at
             FROM usage_samples
-            WHERE metric_group = ?
+            WHERE COALESCE(account_id, '') = COALESCE(?, '')
+              AND metric_group = ?
               AND metric_name = ?
               AND series_label = ?
               AND COALESCE(limit_name, '') = COALESCE(?, '')
@@ -270,7 +276,7 @@ def _load_latest_rows(conn: sqlite3.Connection, rows: Sequence[Dict[str, Any]]) 
             ORDER BY sampled_at DESC, id DESC
             LIMIT 1
             """,
-            (metric_group, metric_name, series_label, limit_name, metered_feature),
+            (account_id, metric_group, metric_name, series_label, limit_name, metered_feature),
         ).fetchone()
         if current is None:
             continue

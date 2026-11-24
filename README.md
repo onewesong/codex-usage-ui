@@ -28,7 +28,10 @@ English | [简体中文](README.zh-CN.md)
 - standalone collector for long-running background collection
 - human-readable CLI summary with Unicode progress bars
 - support for custom auth and history database paths
+- multi-account snapshots from custom fetchers, with account selection and isolated history
 - no external backend required
+
+For local CLIProxyAPI collection and a user-level systemd deployment on r9s-outer, see [the deployment guide](deploy/outer/README.md). A custom fetcher can return `{"accounts": [<usage JSON>, ...]}`; each account needs a stable, unique `account_id` and may include an `email` or an `error` string. Single-account payloads remain supported.
 
 ## Installation
 

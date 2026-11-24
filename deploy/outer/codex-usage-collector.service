@@ -1,0 +1,17 @@
+[Unit]
+Description=Codex Usage History Collector (local CPA)
+Wants=cliproxyapi.service
+After=cliproxyapi.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/cpa/codex-usage-ui
+EnvironmentFile=/home/cpa/.config/codex-usage-ui/service.env
+ExecStart=/home/cpa/codex-usage-ui/.venv/bin/python collect_history.py --interval-seconds 300 --source systemd_collector
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
