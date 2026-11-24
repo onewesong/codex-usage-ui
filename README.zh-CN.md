@@ -26,6 +26,7 @@
 - 支持独立采集器常驻后台采样
 - CLI 支持带 Unicode 进度条的人类可读输出
 - 支持自定义鉴权文件和历史数据库路径
+- 支持多账号切换、独立历史和单账号错误处理
 - 不依赖额外后端服务
 
 ## 安装
@@ -175,11 +176,48 @@ CLI 本身不会常驻采集历史数据；如果要长期追踪，请使用 `ru
 - `CODEX_USAGE_AUTO_COLLECTOR_INTERVAL_SECONDS`：自动后台采样间隔，默认 `300`
 - `CODEX_USAGE_FETCH_SCRIPT`：自定义用量获取脚本（或包含参数的命令）。设置后不再读取本机登录态或请求默认接口，而是执行该命令并使用其标准输出。
 
-自定义脚本的标准输出必须是一个与上游 usage 接口完全相同的 JSON 对象；诊断信息请写到标准错误。该配置会同时作用于 Web UI、CLI 和历史采集器。例如：
+自定义脚本的标准输出必须是一个 usage JSON 对象或下文的多账号格式；诊断信息请写到标准错误。该配置会同时作用于 Web UI、CLI 和历史采集器。例如：
 
 ```bash
 CODEX_USAGE_FETCH_SCRIPT="/opt/scripts/fetch-codex-usage.sh" ./run.sh
 ```
+
+### 多账号
+
+任意自定义采集脚本均可返回多个账号，不依赖特定提供商、域名或部署环境。将各账号的上游响应放在 `accounts` 数组中：
+
+```json
+{
+  "accounts": [
+    {
+      "account_id": "account-a",
+      "email": "alice@example.com",
+      "plan_type": "plus",
+      "rate_limit": {
+        "allowed": true,
+        "limit_reached": false,
+        "primary_window": {"used_percent": 25, "limit_window_seconds": 18000}
+      }
+    },
+    {"account_id": "account-b", "email": "bob@example.com", "error": "配额服务暂时不可用"}
+  ]
+}
+```
+
+- 每个账号必须有稳定、唯一、非空的字符串 `account_id`，不要使用数组下标或 access token 作为标识。`email`、`plan_type` 是可选显示字段。
+- 成功账号包含常规上游 usage 字段；失败账号可提供非空字符串 `error`。失败账号不会阻止其他账号展示，也不会写入配额样本。
+- UI 按 ID 选择账号，历史只显示所选账号的数据。源列表顺序改变时不会切换所选账号；失败账号仍可重试并查看此前历史。
+- CLI 的 `--human` 按账号分别输出。后台采集器采样所有成功账号；全部失败时记录采集失败。空 `accounts` 数组表示暂无账号，不写入样本。
+- 旧的单账号响应和 SQLite 文件继续兼容，无需重写表结构。已有记录保留原来的账号标识；缺少账号标识的历史不会自动归入新识别的账号。
+
+使用两个账号的**静态示例数据**预览：
+
+```bash
+CODEX_USAGE_FETCH_SCRIPT="cat examples/multi-account-snapshot.json" ./run.sh
+CODEX_USAGE_FETCH_SCRIPT="cat examples/multi-account-snapshot.json" python3 get-codex-usage.py --human
+```
+
+接入真实数据时替换成自己的采集命令。凭据和私人认证文件应保存在仓库外，输出仅包含用量字段，不包含 token。现有的 30 秒命令超时适用于整个多账号快照。
 
 脚本示例：
 

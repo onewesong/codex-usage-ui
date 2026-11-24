@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import pandas as pd
 
+from codex_usage import account_snapshots
+
 
 DEFAULT_HISTORY_DB = Path.home() / ".codex-usage-ui" / "history.sqlite3"
 HISTORY_COLUMNS = [
@@ -42,6 +44,7 @@ HISTORY_STATUS_DEFAULTS = {
     "last_error": None,
 }
 SERIES_ID_COLUMNS = (
+    "account_id",
     "metric_group",
     "metric_name",
     "series_label",
@@ -88,6 +91,13 @@ def ensure_history_db(db_path: Optional[Path] = None) -> Path:
             """
             CREATE INDEX IF NOT EXISTS idx_usage_samples_metric
             ON usage_samples(metric_group, metric_name, limit_name, metered_feature, series_label)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_usage_samples_account_metric
+            ON usage_samples(COALESCE(account_id, ''), metric_group, metric_name, series_label,
+                             limit_name, metered_feature, sampled_at DESC, id DESC)
             """
         )
         conn.execute(
@@ -161,6 +171,13 @@ def _window_record(
 
 def extract_history_samples(data: Dict[str, Any], sampled_at: Optional[int] = None) -> List[Dict[str, Any]]:
     timestamp = sampled_at or int(datetime.now(timezone.utc).timestamp())
+    accounts = account_snapshots(data)
+    if "accounts" in data:
+        return [
+            row
+            for account in accounts if not account.get("error")
+            for row in extract_history_samples(account, sampled_at=timestamp)
+        ]
     account_id = str(data.get("account_id") or "")
     plan_type = str(data.get("plan_type") or "")
     rows: List[Dict[str, Any]] = []
@@ -248,7 +265,7 @@ def _series_key(record: Dict[str, Any]) -> Tuple[Any, ...]:
 def _load_latest_rows(conn: sqlite3.Connection, rows: Sequence[Dict[str, Any]]) -> Dict[Tuple[Any, ...], Dict[str, Any]]:
     latest_by_key: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
     for row in rows:
-        metric_group, metric_name, series_label, limit_name, metered_feature = _series_key(row)
+        account_id, metric_group, metric_name, series_label, limit_name, metered_feature = _series_key(row)
         current = conn.execute(
             """
             SELECT
@@ -262,7 +279,8 @@ def _load_latest_rows(conn: sqlite3.Connection, rows: Sequence[Dict[str, Any]]) 
                 limit_reached,
                 reset_at
             FROM usage_samples
-            WHERE metric_group = ?
+            WHERE COALESCE(account_id, '') = COALESCE(?, '')
+              AND metric_group = ?
               AND metric_name = ?
               AND series_label = ?
               AND COALESCE(limit_name, '') = COALESCE(?, '')
@@ -270,7 +288,7 @@ def _load_latest_rows(conn: sqlite3.Connection, rows: Sequence[Dict[str, Any]]) 
             ORDER BY sampled_at DESC, id DESC
             LIMIT 1
             """,
-            (metric_group, metric_name, series_label, limit_name, metered_feature),
+            (account_id, metric_group, metric_name, series_label, limit_name, metered_feature),
         ).fetchone()
         if current is None:
             continue
@@ -487,18 +505,26 @@ def load_history_status(db_path: Optional[Path] = None) -> Dict[str, Any]:
     }
 
 
-def load_history_samples(range_key: str = "7D", db_path: Optional[Path] = None) -> pd.DataFrame:
+def load_history_samples(
+    range_key: str = "7D", db_path: Optional[Path] = None, *, account_id: Optional[str] = None
+) -> pd.DataFrame:
     active_path = ensure_history_db(db_path)
     if range_key not in RANGE_WINDOWS:
         raise ValueError(f"unsupported range key: {range_key}")
 
     params: List[Any] = []
+    conditions = []
     query = "SELECT * FROM usage_samples"
     window = RANGE_WINDOWS[range_key]
     if window is not None:
         cutoff = int((datetime.now(timezone.utc) - window).timestamp())
-        query += " WHERE sampled_at >= ?"
+        conditions.append("sampled_at >= ?")
         params.append(cutoff)
+    if account_id is not None:
+        conditions.append("COALESCE(account_id, '') = ?")
+        params.append(account_id)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
     query += " ORDER BY sampled_at ASC, id ASC"
 
     with sqlite3.connect(active_path) as conn:

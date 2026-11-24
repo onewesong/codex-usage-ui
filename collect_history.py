@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 from typing import Any, Dict
 
-from codex_usage import fetch_usage_snapshot
+from codex_usage import account_snapshots, fetch_usage_snapshot
 from history_store import mark_history_check_failed, save_history_snapshot_if_changed
 
 
@@ -46,6 +46,12 @@ def timestamp_text(unix_ts: int | None) -> str:
 def collect_once(source: str = "collector") -> Dict[str, Any]:
     try:
         _, _, data = fetch_usage_snapshot()
+        accounts = account_snapshots(data)
+        if accounts and all(account.get("error") for account in accounts):
+            raise RuntimeError("all accounts failed: " + "; ".join(
+                f"{account.get('email') or account.get('account_id')}: {account['error']}"
+                for account in accounts
+            ))
         result = save_history_snapshot_if_changed(data, source=source)
     except Exception as exc:
         result = mark_history_check_failed(str(exc), source=source)

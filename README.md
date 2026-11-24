@@ -28,6 +28,7 @@ English | [简体中文](README.zh-CN.md)
 - standalone collector for long-running background collection
 - human-readable CLI summary with Unicode progress bars
 - support for custom auth and history database paths
+- multi-account snapshots with account selection, independent history, and per-account errors
 - no external backend required
 
 ## Installation
@@ -177,11 +178,48 @@ The CLI does not continuously collect history by itself. Use `run-collector.sh` 
 - `CODEX_USAGE_AUTO_COLLECTOR_INTERVAL_SECONDS`: interval for the auto collector, default `300`
 - `CODEX_USAGE_FETCH_SCRIPT`: custom usage-fetch script (or command with arguments). When set, its stdout is used instead of local auth and the default usage endpoint.
 
-The custom script must write one JSON object in the same format as the upstream usage endpoint to stdout; write diagnostics to stderr. This applies to the Web UI, CLI, and history collector.
+The custom script must write a usage JSON object or a multi-account envelope (see below) to stdout; write diagnostics to stderr. This applies to the Web UI, CLI, and history collector.
 
 ```bash
 CODEX_USAGE_FETCH_SCRIPT="/opt/scripts/fetch-codex-usage.sh" ./run.sh
 ```
+
+### Multiple accounts
+
+Any custom fetcher can supply multiple accounts without coupling the dashboard to a provider or deployment. Wrap the usual upstream responses in an `accounts` array:
+
+```json
+{
+  "accounts": [
+    {
+      "account_id": "account-a",
+      "email": "alice@example.com",
+      "plan_type": "plus",
+      "rate_limit": {
+        "allowed": true,
+        "limit_reached": false,
+        "primary_window": {"used_percent": 25, "limit_window_seconds": 18000}
+      }
+    },
+    {"account_id": "account-b", "email": "bob@example.com", "error": "Quota service unavailable"}
+  ]
+}
+```
+
+- Each entry requires a stable, unique, nonempty string `account_id`. Do not use list positions or access tokens as identifiers. `email` and `plan_type` are optional display fields.
+- A successful entry contains the usual upstream usage fields. A failed entry can provide a nonempty `error` string; other accounts remain available, and failed entries do not write quota samples.
+- The UI selects accounts by ID and filters history to the selected account. Reordering the source list does not switch the selected account. A failed account can retry and still view its previous history.
+- `--human` prints a separate section for each account. The background collector samples every successful account; if all accounts fail, it records a failed check. An empty `accounts` array means no accounts and produces no samples.
+- Existing single-account responses and SQLite files continue to work. No schema rewrite is required; existing rows keep their recorded account IDs. History without an account ID is retained but is not automatically assigned to a newly identified account.
+
+To preview two accounts with **static example data**:
+
+```bash
+CODEX_USAGE_FETCH_SCRIPT="cat examples/multi-account-snapshot.json" ./run.sh
+CODEX_USAGE_FETCH_SCRIPT="cat examples/multi-account-snapshot.json" python3 get-codex-usage.py --human
+```
+
+For live data, replace the command with your own fetcher. Keep credentials and private auth files outside the repository; return usage fields only, never tokens. The existing 30-second command timeout applies to the complete snapshot.
 
 Examples:
 
